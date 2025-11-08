@@ -2,7 +2,7 @@
 if (process.env.NODE_ENV !== "production") {
     require('dotenv').config();
 }
-//https://yelpcamp-utx7.onrender.com/
+//https://yelpcamp-1-e9s2.onrender.com
 console.log("SECRET:", process.env.SECRET);
 console.log("API_KEY:", process.env.API_KEY);
 
