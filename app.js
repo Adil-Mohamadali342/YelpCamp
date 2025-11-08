@@ -24,11 +24,13 @@ const userRoutes = require('./routes/users');
 const campgroundRoutes = require('./routes/campgrounds');
 const reviewRoutes = require('./routes/reviews');
 
-const MongoDBStore = require('connect-mongo')(session)
+const MongoDBStore = require('connect-mongo')
 
 const dbUrl = process.env.DB_URL || 'mongodb://127.0.0.1:27017/yelp-camp-maptiler';
 
 // Connect to MongoDB
+console.log("Connecting to:", dbUrl);
+
 mongoose.connect(dbUrl)
     .then(() => console.log('✅ MongoDB connection open!'))
     .catch(err => console.error('❌ MongoDB connection error:', err));
@@ -46,11 +48,14 @@ app.use(methodOverride('_method'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(mongoSanitize({ replaceWith: '_' }));
 
-const store = new MongoDBStore({
-    url: dbUrl,
-    secret: 'thisshoudbeabettersecret',
+const store = MongoDBStore.create({
+    mongoUrl: dbUrl,
+    crypto: {
+        secret: process.env.SECRET || 'thisshouldbeabettersecret'
+    },
     touchAfter: 24 * 60 * 60
-})
+});
+
 store.on('error', function (e) {
     console.log("session store error", e)
 })
