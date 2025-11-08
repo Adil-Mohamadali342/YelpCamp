@@ -2,7 +2,7 @@
 if (process.env.NODE_ENV !== "production") {
     require('dotenv').config();
 }
-
+//https://yelpcamp-utx7.onrender.com/
 console.log("SECRET:", process.env.SECRET);
 console.log("API_KEY:", process.env.API_KEY);
 
@@ -26,7 +26,7 @@ const reviewRoutes = require('./routes/reviews');
 
 const MongoDBStore = require('connect-mongo')(session)
 
-const dbUrl = 'mongodb://127.0.0.1:27017/yelp-camp-maptiler';
+const dbUrl = process.env.DB_URL || 'mongodb://127.0.0.1:27017/yelp-camp-maptiler';
 
 // Connect to MongoDB
 mongoose.connect(dbUrl)
