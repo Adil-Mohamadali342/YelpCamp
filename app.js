@@ -1,10 +1,6 @@
-// Load environment variables in development
 if (process.env.NODE_ENV !== "production") {
     require('dotenv').config();
 }
-//https://yelpcamp-1-e9s2.onrender.com
-console.log("SECRET:", process.env.SECRET);
-console.log("API_KEY:", process.env.API_KEY);
 
 const express = require('express');
 const path = require('path');
@@ -19,120 +15,84 @@ const LocalStrategy = require('passport-local');
 const User = require('./models/user');
 const helmet = require("helmet");
 const mongoSanitize = require('express-mongo-sanitize');
+const MongoDBStore = require('connect-mongo');
 
 const userRoutes = require('./routes/users');
 const campgroundRoutes = require('./routes/campgrounds');
 const reviewRoutes = require('./routes/reviews');
 
-const MongoDBStore = require('connect-mongo')
+const dbUrl = process.env.DB_URL || 'mongodb://127.0.0.1:27017/yelpcamp';
 
-const dbUrl = process.env.DB_URL || 'mongodb://127.0.0.1:27017/yelp-camp-maptiler';
+mongoose.connect(dbUrl);
 
-// Connect to MongoDB
-console.log("Connecting to:", dbUrl);
-
-mongoose.connect(dbUrl)
-    .then(() => console.log('✅ MongoDB connection open!'))
-    .catch(err => console.error('❌ MongoDB connection error:', err));
+const db = mongoose.connection;
+db.on("error", console.error.bind(console, "connection error:"));
+db.once("open", () => {
+    console.log("MongoDB connected!");
+});
 
 const app = express();
 
-// Set up EJS and views
 app.engine('ejs', ejsMate);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride('_method'));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(mongoSanitize({ replaceWith: '_' }));
+app.use(mongoSanitize());
+
+const secret = process.env.SECRET || 'fallbacksecret';
 
 const store = MongoDBStore.create({
     mongoUrl: dbUrl,
-    crypto: {
-        secret: process.env.SECRET || 'thisshouldbeabettersecret'
-    },
-    touchAfter: 24 * 60 * 60
+    secret,
+    touchAfter: 24 * 3600
 });
 
-store.on('error', function (e) {
-    console.log("session store error", e)
-})
-// Session configuration
+store.on("error", e => console.log("SESSION STORE ERROR", e));
+
 const sessionConfig = {
     store,
-    name: 'session',
-    secret: process.env.SECRET || 'thisshouldbeabettersecret',
+    name: 'yc_sess',
+    secret,
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
     cookie: {
         httpOnly: true,
-        // secure: true, // uncomment when deploying with HTTPS
+        secure: process.env.NODE_ENV === "production",
         expires: Date.now() + 1000 * 60 * 60 * 24 * 7,
         maxAge: 1000 * 60 * 60 * 24 * 7
     }
 };
+
 app.use(session(sessionConfig));
 app.use(flash());
-
-// Helmet security setup
 app.use(helmet());
 
-// Allowed external sources for Helmet CSP
-const scriptSrcUrls = [
-    "https://stackpath.bootstrapcdn.com/",
-    "https://kit.fontawesome.com/",
-    "https://cdnjs.cloudflare.com/",
-    "https://cdn.jsdelivr.net",
-    "https://cdn.maptiler.com/",
-];
-const styleSrcUrls = [
-    "https://kit-free.fontawesome.com/",
-    "https://stackpath.bootstrapcdn.com/",
-    "https://fonts.googleapis.com/",
-    "https://use.fontawesome.com/",
-    "https://cdn.jsdelivr.net",
-    "https://cdn.maptiler.com/",
-];
-const connectSrcUrls = [
-    "https://api.maptiler.com/",
-    "https://cdn.maptiler.com/",
-    "https://cdn.jsdelivr.net/"
-];
-const fontSrcUrls = [];
+const scriptSrcUrls = ["https://stackpath.bootstrapcdn.com/", "https://kit.fontawesome.com/", "https://cdnjs.cloudflare.com/", "https://cdn.jsdelivr.net", "https://cdn.maptiler.com/", "https://unpkg.com/"];
+const styleSrcUrls = ["https://kit-free.fontawesome.com/", "https://stackpath.bootstrapcdn.com/", "https://fonts.googleapis.com/", "https://use.fontawesome.com/", "https://cdn.jsdelivr.net", "https://cdn.maptiler.com/", "https://unpkg.com/"];
+const connectSrcUrls = ["https://api.maptiler.com/", "https://cdn.maptiler.com/", "https://cdn.jsdelivr.net"];
 
-app.use(
-    helmet.contentSecurityPolicy({
-        directives: {
-            defaultSrc: [],
-            connectSrc: ["'self'", ...connectSrcUrls],
-            scriptSrc: ["'self'", "'unsafe-inline'", ...scriptSrcUrls],
-            styleSrc: ["'self'", "'unsafe-inline'", ...styleSrcUrls],
-            workerSrc: ["'self'", 'blob:'],
-            objectSrc: [],
-            imgSrc: [
-                "'self'",
-                'blob:',
-                'data:',
-                'https://api.maptiler.com/',
-                'https://res.cloudinary.com/',  // Cloudinary images
-                'https://images.unsplash.com/', // Unsplash images
-            ],
-            fontSrc: ["'self'", ...fontSrcUrls],
-        },
-    })
-);
+app.use(helmet.contentSecurityPolicy({
+    directives: {
+        defaultSrc: [],
+        connectSrc: ["'self'", ...connectSrcUrls],
+        scriptSrc: ["'self'", "'unsafe-inline'", ...scriptSrcUrls],
+        styleSrc: ["'self'", "'unsafe-inline'", ...styleSrcUrls],
+        workerSrc: ["'self'", "blob:"],
+        objectSrc: [],
+        imgSrc: ["'self'", "blob:", "data:", "https://api.maptiler.com/", "https://res.cloudinary.com/", "https://images.unsplash.com/"],
+        fontSrc: ["'self'"],
+    },
+}));
 
-// Passport setup
 app.use(passport.initialize());
 app.use(passport.session());
 passport.use(new LocalStrategy(User.authenticate()));
-
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
 
-// Flash + currentUser middleware
 app.use((req, res, next) => {
     res.locals.currentUser = req.user;
     res.locals.success = req.flash('success');
@@ -140,36 +100,31 @@ app.use((req, res, next) => {
     next();
 });
 
-// Temporary route for testing user registration (use once)
 app.get('/fakeUser', async (req, res) => {
     const user = new User({ email: 'adil@gmail.com', username: 'adil' });
     const newUser = await User.register(user, 'chicken');
     res.send(newUser);
 });
 
-// Route handlers
 app.use('/', userRoutes);
 app.use('/campgrounds', campgroundRoutes);
 app.use('/campgrounds/:id/reviews', reviewRoutes);
 
-// Home route
 app.get('/', (req, res) => {
     res.render('home');
 });
 
-// 404 handler
 app.all('*', (req, res, next) => {
-    next(new ExpressError('Page not found', 404));
+    next(new ExpressError('Page Not Found', 404));
 });
 
-// Error handler
 app.use((err, req, res, next) => {
     const { statusCode = 500 } = err;
-    if (!err.message) err.message = "Oh no, something went wrong!";
+    if (!err.message) err.message = 'Something went wrong';
     res.status(statusCode).render('error', { err });
 });
 
-// Start server
-app.listen(3000, () => {
-    console.log("🚀 Serving on port 3000");
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+    console.log(`Serving on port ${port}`);
 });
